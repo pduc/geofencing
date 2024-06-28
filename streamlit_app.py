@@ -1,40 +1,118 @@
-import altair as alt
-import numpy as np
-import pandas as pd
 import streamlit as st
+from streamlit.components.v1 import html
 
-"""
-# Welcome to Streamlit!
+# Function to generate HTML with Google Maps and geofencing logic
+def generate_map_html(api_key, lat, lng, radius, user_lat=None, user_lng=None, simulate_movement=False):
+    user_location_script = ""
+    if user_lat is not None and user_lng is not None:
+        user_location_script = f"""
+            let userLocation = {{ lat: {user_lat}, lng: {user_lng} }};
+            const userMarker = new google.maps.Marker({{
+                position: userLocation,
+                map: map,
+                title: 'User Location'
+            }});
 
-Edit `/streamlit_app.py` to customize this app to your heart's desire :heart:.
-If you have any questions, checkout our [documentation](https://docs.streamlit.io) and [community
-forums](https://discuss.streamlit.io).
+            function checkGeofence() {{
+                const isInsideGeofence = google.maps.geometry.spherical.computeDistanceBetween(
+                    new google.maps.LatLng(userLocation),
+                    geofence.getCenter()
+                ) <= geofence.getRadius();
 
-In the meantime, below is an example of what you can do with just a few lines of code:
-"""
+                if (isInsideGeofence) {{
+                    alert("User has reached inside the geofence!");
+                    return true;
+                }}
+                return false;
+            }}
 
-num_points = st.slider("Number of points in spiral", 1, 10000, 1100)
-num_turns = st.slider("Number of turns in spiral", 1, 300, 31)
+            function moveUser() {{
+                const geofenceCenter = geofence.getCenter();
+                const latStep = (geofenceCenter.lat() - userLocation.lat) / 50;
+                const lngStep = (geofenceCenter.lng() - userLocation.lng) / 50;
 
-indices = np.linspace(0, 1, num_points)
-theta = 2 * np.pi * num_turns * indices
-radius = indices
+                const moveInterval = setInterval(() => {{
+                    userLocation = {{
+                        lat: userLocation.lat + latStep,
+                        lng: userLocation.lng + lngStep
+                    }};
+                    userMarker.setPosition(userLocation);
 
-x = radius * np.cos(theta)
-y = radius * np.sin(theta)
+                    if (checkGeofence()) {{
+                        clearInterval(moveInterval);
+                    }}
+                }}, 1000);
+            }}
 
-df = pd.DataFrame({
-    "x": x,
-    "y": y,
-    "idx": indices,
-    "rand": np.random.randn(num_points),
-})
+            { 'moveUser();' if simulate_movement else 'checkGeofence();' }
+        """
+    
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Geofencing with Google Maps</title>
+        <script src="https://maps.googleapis.com/maps/api/js?key={api_key}&libraries=geometry"></script>
+        <style>
+            #map {{
+                height: 400px;
+                width: 100%;
+            }}
+        </style>
+    </head>
+    <body>
+        <div id="map"></div>
+        <script>
+            function initMap() {{
+                const mapCenter = {{ lat: {lat}, lng: {lng} }};
+                const geofenceCenter = {{ lat: {lat}, lng: {lng} }};
+                const geofenceRadius = {radius};
 
-st.altair_chart(alt.Chart(df, height=700, width=700)
-    .mark_point(filled=True)
-    .encode(
-        x=alt.X("x", axis=None),
-        y=alt.Y("y", axis=None),
-        color=alt.Color("idx", legend=None, scale=alt.Scale()),
-        size=alt.Size("rand", legend=None, scale=alt.Scale(range=[1, 150])),
-    ))
+                const map = new google.maps.Map(document.getElementById('map'), {{
+                    zoom: 13,
+                    center: mapCenter
+                }});
+
+                const geofence = new google.maps.Circle({{
+                    strokeColor: '#FF0000',
+                    strokeOpacity: 0.8,
+                    strokeWeight: 2,
+                    fillColor: '#FF0000',
+                    fillOpacity: 0.35,
+                    map: map,
+                    center: geofenceCenter,
+                    radius: geofenceRadius
+                }});
+
+                {user_location_script}
+            }}
+            window.onload = initMap;
+        </script>
+    </body>
+    </html>
+    """
+
+# Streamlit app
+st.title('Geofencing with Google Maps')
+
+api_key = 'AIzaSyAfczM6HrvFXvDgRc7Sk9MYC2yXqYxEF78'
+lat = st.number_input('Enter Geofence Center Latitude', value=52.4751549)
+lng = st.number_input('Enter Geofence Center Longitude', value=-1.8870842)
+radius = st.number_input('Enter Geofence Radius (meters)', value=1000.0)
+
+user_lat = st.number_input('Enter User Latitude', value=52.4435823)
+user_lng = st.number_input('Enter User Longitude', value=-1.897724)
+
+simulate_movement = st.checkbox('Simulate User Movement')
+
+if st.button('Show Map with Geofence'):
+    map_html = generate_map_html(api_key, lat, lng, radius, user_lat, user_lng)
+    html(map_html, height=450)
+
+if st.button('Check User Position'):
+    map_html = generate_map_html(api_key, lat, lng, radius, user_lat, user_lng)
+    html(map_html, height=450)
+
+if st.button('Simulate User Movement'):
+    map_html = generate_map_html(api_key, lat, lng, radius, user_lat, user_lng, simulate_movement=True)
+    html(map_html, height=450)
